@@ -1,0 +1,389 @@
+#!/bin/bash
+
+# The main entry point
+project() {
+    local cmd=$1
+    shift
+
+    case "$cmd" in
+        amend)  amend_commit "$@" ;;
+        branch) branch_router "$@" ;;
+        commit) project_commit ;;
+        run)    echo "Running project..." ;;
+        reset)  project_reset ;;
+        squash) project_squash ;;
+        undo)   project_undo_wizard "$@" ;;
+        *)
+            # Discovery Mode with a custom header
+            local choice=$(gum choose --header "What would you like to do?" \
+                "branch" \
+                "amend" \
+                "commit" \
+                "run" \
+                "install" \
+                "push" \
+                "reset" \
+                "squash" \
+                "undo" \
+             )
+
+            # Capture the exit code of the gum command
+            local exit_status=$?
+
+            # If Ctrl+C (130) or Esc was pressed, exit the function entirely
+            if [[ $exit_status -eq 130 ]]; then
+                return 130
+            fi
+
+            # Only proceed if a choice was actually made
+            if [[ -n "$choice" ]]; then
+                project "$choice"
+            fi
+            ;;
+    esac
+}
+
+
+get_conventional_message() {
+    # 1. Type Selection
+    local type=$(gum choose --header "Commit Type" "fix" "feat" "docs" "style" "refactor" "chore")
+    [[ $? -eq 130 ]] && return 130
+    
+    # 2. The Subject Line
+    local subject=$(gum input --placeholder "Commit message (Short and descriptive)")
+    [[ $? -eq 130 ]] && return 130
+    [[ -z "$subject" ]] && return 130
+
+    # 3. The Optional Description
+    # We use write here so they have room if they need it, 
+    # but the header tells them they can skip it instantly.
+    local body=$(gum write --header "Extended description? (Optional. Ctrl+D to save/skip)" --width 80)
+    [[ $? -eq 130 ]] && return 130
+    
+    # 4. Construct the Final String
+    local full_msg=""
+    if [[ -n "$body" ]]; then
+        # Ensures the mandatory blank line between subject and body
+        full_msg=$(echo -e "${type}: ${subject}\n\n${body}")
+    else
+        full_msg="${type}: ${subject}"
+    fi
+
+    # 5. Final Confirmation Loop
+    echo -e "\n--- REVIEW ---\n${full_msg}\n--------------" >&2
+    local action=$(gum choose "Confirm" "Edit" "Abort")
+    local exit_status=$?
+
+    # Handle Ctrl+C or "Abort" selection
+    if [[ $exit_status -eq 130 || "$action" == "Abort" ]]; then
+        return 130
+    fi
+    
+    case "$action" in
+        "Confirm") echo -e "$full_msg"; return 0 ;;
+        "Edit")    get_conventional_message; return $? ;; # Recursive restart
+        *)         return 130 ;;
+    esac
+}
+
+# The Branch Router
+branch_router() {
+    local action=$1
+    shift
+
+    case "$action" in
+        create)
+            # Logic for creating a branch
+            local name=$(gum input --placeholder "New branch name")
+            echo "Creating branch: $name"
+            git checkout -b "$name"
+            ;;
+        switch)
+            # Logic for switching
+            local target=$(git branch --format="%(refname:short)" | gum filter)
+            git checkout "$target"
+            ;;
+        *)
+            # Discovery Mode: No action provided, so ask!
+            local choice=$(gum choose "create" "switch" "rebase")
+            local exit_status=$?
+            
+            [[ $exit_status -eq 130 ]] && return 130
+            
+            if [[ -n "$choice" ]]; then
+                branch_router "$choice"
+            fi
+            ;;
+    esac
+}
+
+commit_wizard() {
+    if git diff --cached --quiet; then
+        echo "❌ Error: Nothing staged to commit." >&2
+        return 1
+    fi
+
+    local full_msg=$(get_conventional_message)
+    [[ $? -eq 130 ]] && { echo "Aborted." >&2; return 130; }
+    
+    if gum confirm "Commit as '$full_msg'?"; then
+        git commit -m "$full_msg"
+    else
+        echo "Commit aborted." >&2
+    fi
+}
+
+
+# Inside your project script
+stage_files() {
+    # Get unstaged/untracked files
+    local files=$(git status --porcelain | grep -E '^( M| M|\?\?)' | sed 's/^...//')
+
+    if [ -n "$files" ]; then
+        echo "Unstaged changes detected:"
+        local selected=$(echo "$files" | gum filter --no-limit --placeholder "Select files to stage (Tab to multi-select)")
+
+        if [ -n "$selected" ]; then
+            echo "$selected" | xargs git add
+            echo "Files staged!"
+        fi
+    fi
+}
+
+amend_commit() {
+    smart_stage
+    [[ $? -ne 0 ]] && return $?
+
+    # Show them what they are about to change
+    echo "Last commit:" >&2
+    git --no-pager log -1 --format='%C(yellow)%h%C(reset) %s'
+    git status
+
+    if gum confirm "Amend the last commit with current staged changes?"; then
+        if gum confirm "Keep existing commit message?"; then
+            git commit --amend --no-edit
+        else
+            # Use the helper to get a fresh conventional message
+            local full_msg=$(get_conventional_message)
+            if [[ $? -eq 130 || -z "$full_msg" ]]; then
+                echo "Aborted." >&2
+                return 130
+            fi
+            
+            git commit --amend -m "$full_msg"
+            echo "✅ Amended successfully." >&2
+        fi
+    fi
+}
+
+project_reset() {
+    # Get the last 10 commits for selection
+    local target=$(git log -n 10 --oneline | gum choose | awk '{print $1}')
+    
+    if [ -n "$target" ]; then
+        echo "WARNING: This will revert all files to match commit $target."
+        if gum confirm "Are you absolutely sure? Unsaved changes will be lost."; then
+            git reset --hard "$target"
+            echo "HEAD is now at $target"
+        fi
+    fi
+}
+
+# Silently restores stash only if we created one
+restore_stash_if_needed() {
+    local stash_signal=$1
+    if [[ "$stash_signal" == "stashed" ]]; then
+        git stash pop -q > /dev/null 2>&1
+    fi
+}
+
+project_squash() {
+    local stash_result=$(ensure_clean_working_tree)
+    [[ $? -eq 130 ]] && return 130
+
+    local squashable_commits=$(git log -n 20 --oneline --min-parents=1)
+    local chosen_hash=$(echo "$squashable_commits" | gum choose --header "Select the oldest commit to include in the squash" | awk '{print $1}')
+    
+    # If cancelled, restore and exit
+    [[ -z "$chosen_hash" ]] && { restore_stash_if_needed "$stash_result"; return; }
+
+    local target="${chosen_hash}~1"
+    
+    if gum confirm "Collapse selected commits?"; then
+        git reset --soft "$target" > /dev/null
+        commit_wizard
+    fi
+
+    restore_stash_if_needed "$stash_result"
+}
+
+project_undo_wizard() {
+    local stash_result=$(ensure_clean_working_tree)
+    [[ $? -eq 130 ]] && return 130
+
+    local squashable_commits=$(git log -n 15 --oneline --min-parents=1)
+
+    if [[ -z "$squashable_commits" ]]; then
+        echo "No commits available to undo." >&2
+        restore_stash_if_needed "$stash_result"
+        return 1
+    fi
+
+    local target_selection=$(echo "$squashable_commits" | gum choose --header "Select the OLDEST commit to undo")
+    [[ -z "$target_selection" ]] && { restore_stash_if_needed "$stash_result"; return; }
+    
+    local selected_hash=$(echo "$target_selection" | awk '{print $1}')
+    local reset_target="${selected_hash}~1"
+
+    local mode=$(gum choose --header "How should we handle the undone changes?" \
+        "Soft (Keep and Stage)" "Mixed (Keep but Unstage)" "Hard (Delete Everything)")
+    
+    [[ -z "$mode" ]] && { restore_stash_if_needed "$stash_result"; return; }
+
+    case "$mode" in
+        "Soft"*)  git reset --soft "$reset_target" > /dev/null ;;
+        "Mixed"*) git reset --mixed "$reset_target" > /dev/null ;;
+        "Hard"*)  
+            if gum confirm "🔥 PERMANENTLY DELETE these commits?"; then
+                git reset --hard "$reset_target" > /dev/null
+            fi
+            ;;
+    esac
+
+    restore_stash_if_needed "$stash_result"
+}
+
+smart_stage() {
+    local raw_status=$(git status --porcelain)
+
+    # If the working tree is literally empty, tell the user and exit
+    if [[ -z "$raw_status" ]]; then
+        echo "Nothing to commit, working tree clean."
+        return 1
+    fi
+
+    local file_list=$(echo "$raw_status" | cut -c4-)
+    local staged_files=$(echo "$raw_status" | grep -E '^[MADRC]' | cut -c4-)
+
+    selections=$(echo "$file_list" | gum choose \
+        --header "Changes to be committed:" \
+        --no-limit \
+        --selected-prefix="[x] " \
+        --unselected-prefix="[ ] " \
+        --cursor-prefix="[ ] " \
+        --selected="$staged_files")
+
+    local exit_code=$?
+
+    # If $? (the exit status of gum) is not 0, the user hit Ctrl+C or Esc
+    if [[ $exit_code -eq 130 ]]; then
+        return 130 
+    fi
+
+    # If they hit Enter but didn't select anything
+    if [[ -z "$selections" ]]; then
+        echo "No files selected."
+        return 1
+    fi
+
+    git reset HEAD -- . > /dev/null
+    echo "$selections" | while read -r file; do
+        [[ -n "$file" ]] && git add "$file"
+    done
+
+    return 0
+}
+
+project_commit() {
+    smart_stage
+    local result=$?
+
+    # If smart_stage was interrupted or failed, stop here.
+    if [[ $result -ne 0 ]]; then
+        return $result
+    fi
+    
+    commit_wizard
+}
+
+ensure_clean_working_tree() {
+    if [[ -n "$(git status --porcelain)" ]]; then
+        # Replace default "Choose:" with a custom header
+        local action=$(gum choose --header "Uncommitted changes detected. How to proceed?" \
+            "Stash everything and continue" "Abort")
+        
+        if [[ "$action" == "Stash everything and continue" ]]; then
+            # -q (quiet) suppresses the "Saved working directory..." logs
+            git stash push -u -q -m "Auto-stash: $(date +%H:%M:%S)"
+            echo "stashed" 
+            return 0
+        else
+            return 130
+        fi
+    fi
+    echo "clean"
+    return 0
+}
+
+project_push() {
+    local branch=$(git rev-parse --abbrev-ref HEAD)
+    
+    # 1. First, check the current local state
+    local status=$(git rev-list --left-right --count $branch...origin/$branch 2>/dev/null)
+    local behind=$(echo $status | awk '{print $2}')
+
+    # 2. If we aren't sure, or if the user wants to be sure, offer a fetch
+    if [[ "$behind" -eq 0 ]]; then
+        echo "Pushing normally..." >&2
+        if ! git push origin "$branch"; then
+            echo "❌ Push failed. You might be out of sync." >&2
+            if gum confirm "Fetch latest remote status and retry?"; then
+                git fetch origin > /dev/null
+                project_push # Recursive call to re-evaluate with new data
+                return
+            fi
+        fi
+    else
+        # 3. Handle the Divergence (Squash/Undo aftermath)
+        echo "⚠️  Local history has diverged from origin/$branch." >&2
+        
+        local action=$(gum choose --header "Divergence detected. How to proceed?" \
+            "Force-with-lease (Safe Force)" \
+            "Rebase then Push (Cleanest)" \
+            "Nuclear Force (Overwrite)" \
+            "Abort")
+
+        case "$action" in
+            "Force-with-lease"*)
+                git push origin "$branch" --force-with-lease
+                ;;
+            "Rebase"*)
+                git pull --rebase origin "$branch" && git push origin "$branch"
+                ;;
+            "Nuclear Force"*)
+                if gum confirm "Overwrite remote history? This cannot be undone."; then
+                    git push origin "$branch" --force
+                fi
+                ;;
+            *) return 130 ;;
+        esac
+    fi
+}
+
+project_reset() {
+    echo "⚠️  WARNING: This will permanently delete all uncommitted changes and new files." >&2
+    
+    if gum confirm "Are you sure you want to wipe the workspace?"; then
+        # Reset tracked files to the last commit
+        git reset --hard HEAD > /dev/null 2>&1
+        
+        # Delete untracked files (-f = force, -d = directories)
+        git clean -fd > /dev/null 2>&1
+        
+        echo "✨ Rest branch state." >&2
+    else
+        echo "Wipe aborted." >&2
+    fi
+}
+
+project "$@"
