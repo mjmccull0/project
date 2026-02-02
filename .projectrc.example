@@ -12,12 +12,14 @@ PROJECT_COMMIT_TYPES=(
   "chore"
 )
 
+typeset -A PROJECT_CUSTOM_COMMANDS
+
 # --- 2. DISCOVERY MENU ---
 # Add these strings to the 'gum choose' menu when running 'project' without args
 PROJECT_CUSTOM_COMMANDS=(
-  "build"
-  "test"
-  "deploy"
+    build "Build the project assets"
+    peek  "View the build output"
+    logs  "Tail the dev logs"
 )
 
 # --- 3. CUSTOM COMMAND DEFINITIONS ---

@@ -1,0 +1,24 @@
+PROJECT_COMMIT_TYPES=(
+  chore
+  fix
+  new
+  refactor
+)
+
+typeset -A PROJECT_CUSTOM_COMMANDS
+
+PROJECT_CUSTOM_COMMANDS=(
+    build "Build the project assets"
+    peek  "View the build output"
+    logs  "Tail the dev logs"
+)
+
+# Define the 'build' command
+project_local_build() {
+  echo "make build"
+}
+
+# Define the 'logs' command
+project_local_logs() {
+    echo "make log"
+}

@@ -1,0 +1,42 @@
+#compdef project p
+
+_project() {
+    zstyle ':completion:*:*:project:*' group-name ''
+    zstyle ':completion:*:*:project:*:descriptions' format '%F{yellow}-- %d --%f'
+
+    local -a commands
+
+    commands=(
+        'amend:Amend the last commit'
+        'branch:Manage git branches'
+        'commit:Run the conventional commit wizard'
+        'push:Push changes to remote'
+        'reset:Reset staging area or files'
+        'squash:Squash commits'
+        'undo:Undo recent actions'
+    )
+
+    # --- Dynamic Loading from .projectrc ---
+    if [[ -f "./.projectrc" ]]; then
+        # Only suggest init if the file is missing
+        [[ ! -f "./.projectrc" ]] && commands+=('init:Create a .projectrc template')
+
+        # Use a subshell to source the file safely
+        # This prevents polluting your current shell but gets the data perfectly
+        local custom_data
+        custom_data=$(zsh -c 'source ./.projectrc; for k v in "${(@kv)PROJECT_CUSTOM_COMMANDS}"; do echo "$k:$v"; done')
+
+        # TODO: Uncomment or remove.
+        # commands+=("${(f)custom_data}")
+
+        # Split the output by line into the commands array
+        custom_commands_list=("${(f)custom_data}")
+    fi
+
+    # Standard Zsh completion helper
+    # _describe -t commands 'project commands' commands
+    _describe -t core-commands 'standard commands' commands
+    _describe -t project-commands 'project-specific commands' custom_commands_list
+}
+
+_project "$@"

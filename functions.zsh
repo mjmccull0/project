@@ -15,10 +15,16 @@ project() {
     # Only shift if $cmd is not empty
     [[ -n "$cmd" ]] && shift
 
+    # TODO: Pick a naming convention
     # --- THE OVERRIDE CHECK ---
     # This catches BOTH overrides and new commands
     if whence "project_local_$cmd" >/dev/null; then
         "project_local_$cmd" "$@"
+        return $?
+    fi
+    
+    if whence "project_$cmd" >/dev/null; then
+        "project_$cmd" "$@"
         return $?
     fi
 
@@ -26,30 +32,30 @@ project() {
         amend)  amend_commit "$@" ;;
         branch) branch_router "$@" ;;
         commit) project_commit ;;
-        run)    echo "Running project..." ;;
-        reset)  project_reset ;;
+        init)   project_init ;;
         push)   project_push ;;
+        reset)  project_reset ;;
         squash) project_squash ;;
         undo)   project_undo_wizard "$@" ;;
         *)
-            # Build the menu dynamically
-            local -a base_menu=(branch amend commit run push reset squash undo)
+            local -a choices
+            # Add core commands
+            choices=(branch amend commit push reset squash undo)
 
-            # Append custom commands from .projectrc if they exist
-            if (( ${#PROJECT_CUSTOM_COMMANDS[@]} > 0 )); then
-                base_menu+=("${PROJECT_CUSTOM_COMMANDS[@]}")
+            # Add 'init' ONLY if .projectrc does not exist
+            
+            [[ ! -f "./.projectrc" ]] && choices+=(init)
+            # Add only the KEYS (command names) from your Associative Array
+            if (( ${#PROJECT_CUSTOM_COMMANDS} > 0 )); then
+                choices+=("${(@k)PROJECT_CUSTOM_COMMANDS}")
             fi
 
-            local choice=$(gum choose --header "What would you like to do?" "${base_menu[@]}")
+            # Let the user choose
+            local choice=$(gum choose --header "Select a project task" "${choices[@]}")
 
-            # Handle exit/cancel (Ctrl+C sends 130)
-            local exit_status=$?
-            [[ $exit_status -eq 130 ]] && return 130
-
-            # Re-call project with the chosen command
-            if [[ -n "$choice" ]]; then
-                project "$choice"
-            fi
+            # Handle exit or selection
+            [[ -z "$choice" || $? -eq 130 ]] && return
+            project "$choice"
             ;;
     esac
 }
@@ -402,4 +408,35 @@ project_reset() {
     else
         echo "Wipe aborted." >&2
     fi
+}
+
+project_init() {
+    if [[ -f "./.projectrc" ]]; then
+        echo "⚠️  .projectrc already exists."
+        return 1
+    fi
+
+    cat <<EOF > .projectrc
+# .projectrc
+typeset -A PROJECT_CUSTOM_COMMANDS
+
+PROJECT_CUSTOM_COMMANDS=(
+    "start" "Run this project"
+)
+
+project_start() {
+  echo "npm start"
+}
+
+PROJECT_COMMIT_TYPES=(
+  "feat"
+  "fix"
+  "docs"
+  "style"
+  "refactor"
+  "test"
+  "chore"
+)
+EOF
+    echo "✅ Created .projectrc template."
 }
