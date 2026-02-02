@@ -8,9 +8,19 @@ fi
 
 # The main entry point
 project() {
+    # Look for local overrides
+    [[ -f "./.projectrc" ]] && source "./.projectrc"
+
     local cmd=$1
     # Only shift if $cmd is not empty
     [[ -n "$cmd" ]] && shift
+
+    # --- THE OVERRIDE CHECK ---
+    # This catches BOTH overrides and new commands
+    if whence "project_local_$cmd" >/dev/null; then
+        "project_local_$cmd" "$@"
+        return $?
+    fi
 
     case "$cmd" in
         amend)  amend_commit "$@" ;;
@@ -22,28 +32,21 @@ project() {
         squash) project_squash ;;
         undo)   project_undo_wizard "$@" ;;
         *)
-            # Discovery Mode with a custom header
-            local choice=$(gum choose --header "What would you like to do?" \
-                "branch" \
-                "amend" \
-                "commit" \
-                "run" \
-                "install" \
-                "push" \
-                "reset" \
-                "squash" \
-                "undo" \
-             )
+            # Build the menu dynamically
+            local -a base_menu=(branch amend commit run push reset squash undo)
 
-            # Capture the exit code of the gum command
-            local exit_status=$?
-
-            # If Ctrl+C (130) or Esc was pressed, exit the function entirely
-            if [[ $exit_status -eq 130 ]]; then
-                return 130
+            # Append custom commands from .projectrc if they exist
+            if (( ${#PROJECT_CUSTOM_COMMANDS[@]} > 0 )); then
+                base_menu+=("${PROJECT_CUSTOM_COMMANDS[@]}")
             fi
 
-            # Only proceed if a choice was actually made
+            local choice=$(gum choose --header "What would you like to do?" "${base_menu[@]}")
+
+            # Handle exit/cancel (Ctrl+C sends 130)
+            local exit_status=$?
+            [[ $exit_status -eq 130 ]] && return 130
+
+            # Re-call project with the chosen command
             if [[ -n "$choice" ]]; then
                 project "$choice"
             fi
@@ -53,8 +56,16 @@ project() {
 
 
 get_conventional_message() {
+    local -a types
+    if (( ${#PROJECT_COMMIT_TYPES[@]} > 0 )); then
+        types=("${PROJECT_COMMIT_TYPES[@]}")
+    else
+        types=("fix" "feat" "docs" "style" "refactor" "chore")
+    fi
+
     # 1. Type Selection
-    local type=$(gum choose --header "Commit Type" "fix" "feat" "docs" "style" "refactor" "chore")
+    local type=$(gum choose --header "Commit Type" "${types[@]}")
+
     [[ $? -eq 130 ]] && return 130
     
     # 2. The Subject Line

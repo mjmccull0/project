@@ -1,0 +1,53 @@
+# .projectrc - Project-specific configuration for the 'project' CLI tool
+
+# --- 1. COMMIT SETTINGS ---
+# Define the types available in 'project commit'
+PROJECT_COMMIT_TYPES=(
+  "feat"
+  "fix"
+  "docs"
+  "style"
+  "refactor"
+  "test"
+  "chore"
+)
+
+# --- 2. DISCOVERY MENU ---
+# Add these strings to the 'gum choose' menu when running 'project' without args
+PROJECT_CUSTOM_COMMANDS=(
+  "build"
+  "test"
+  "deploy"
+)
+
+# --- 3. CUSTOM COMMAND DEFINITIONS ---
+# Rules: Name functions 'project_local_<command_name>'
+
+# NEW: Run project build
+project_local_build() {
+  echo "Building project..."
+  echo "npm run build""
+}
+
+# NEW: Run test suite
+project_local_test() {
+  echo "npm test"
+}
+
+# NEW: specialized deploy script
+project_local_deploy() {
+  if gum confirm "Are you sure you want to deploy to PRODUCTION?"; then
+    echo "Deploying..."
+    # Add your deployment logic here
+  fi
+}
+
+# OVERRIDE: Change the default 'push' behavior for this repo
+# project_local_push() {
+#   echo "Pushing with force-with-lease for safety..."
+#   git push origin head --force-with-lease
+# }
+
+# --- 4. ENVIRONMENT VARIABLES ---
+# These are loaded whenever you run the 'project' command in this folder
+export PROJECT_NAME="My Awesome App"
