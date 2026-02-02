@@ -353,8 +353,8 @@ project_push() {
     local branch=$(git rev-parse --abbrev-ref HEAD)
     
     # 1. First, check the current local state
-    local status=$(git rev-list --left-right --count $branch...origin/$branch 2>/dev/null)
-    local behind=$(echo $status | awk '{print $2}')
+    local git_status=$(git rev-list --left-right --count $branch...origin/$branch 2>/dev/null)
+    local behind=$(echo $git_status | awk '{print $2}')
 
     # 2. If we aren't sure, or if the user wants to be sure, offer a fetch
     if [[ "$behind" -eq 0 ]]; then
