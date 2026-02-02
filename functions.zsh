@@ -393,5 +393,3 @@ project_reset() {
         echo "Wipe aborted." >&2
     fi
 }
-
-project "$@"
