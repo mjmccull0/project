@@ -1,5 +1,11 @@
 #!/bin/bash
 
+if ! command -v gum &> /dev/null; then
+    echo "❌ Error: 'gum' is not installed."
+    echo "Install it via: brew install gum (macOS) or go install github.com/charmbracelet/gum@latest"
+    exit 1
+fi
+
 # The main entry point
 project() {
     local cmd=$1
@@ -11,6 +17,7 @@ project() {
         commit) project_commit ;;
         run)    echo "Running project..." ;;
         reset)  project_reset ;;
+        push)   project_push ;;
         squash) project_squash ;;
         undo)   project_undo_wizard "$@" ;;
         *)
@@ -302,6 +309,7 @@ project_commit() {
     if [[ $result -ne 0 ]]; then
         return $result
     fi
+    [[ $? -eq 130 ]] && return 130
     
     commit_wizard
 }

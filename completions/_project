@@ -1,0 +1,44 @@
+#compdef project
+
+local curcontext="$curcontext" state line ret=1
+typeset -A opt_args
+
+_arguments -C \
+  '1: :->cmds' \
+  '*:: :->args' && ret=0
+
+case $state in
+  cmds)
+    local -a commands
+    commands=(
+      'amend:Quick fix for last commit'
+      'branch:Git branch management'
+      'commit:Interactive commit wizard'
+      'install:Install dependencies'
+      'run:Execute the project'
+      'push:Interactive push wizard'
+      'squash:Interactive squash wizard'
+      'undo:Safety-net for reverting changes'
+    )
+    _describe -t commands 'project command' commands && ret=0
+    ;;
+  args)
+    case $line[1] in
+      branch)
+        local -a branch_actions
+        branch_actions=(
+          'create:Create a new branch'
+          'rebase:Rebase current branch'
+          'switch:Switch to a different branch'
+        )
+        _describe -t branch_actions 'branch action' branch_actions && ret=0
+        ;;
+      run)
+        # Add specific flags for 'run' here
+        _arguments '(--debug)--debug[Enable debug mode]' && ret=0
+        ;;
+    esac
+    ;;
+esac
+
+return ret
