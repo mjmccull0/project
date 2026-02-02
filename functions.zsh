@@ -9,7 +9,8 @@ fi
 # The main entry point
 project() {
     local cmd=$1
-    shift
+    # Only shift if $cmd is not empty
+    [[ -n "$cmd" ]] && shift
 
     case "$cmd" in
         amend)  amend_commit "$@" ;;
@@ -77,7 +78,10 @@ get_conventional_message() {
     fi
 
     # 5. Final Confirmation Loop
-    echo -e "\n--- REVIEW ---\n${full_msg}\n--------------" >&2
+    {
+      echo 'Review' | gum style --underline --bold >&2
+      echo "${full_msg}" | gum style --bold >&2
+    } >&2
     local action=$(gum choose "Confirm" "Edit" "Abort")
     local exit_status=$?
 
@@ -131,13 +135,9 @@ commit_wizard() {
     fi
 
     local full_msg=$(get_conventional_message)
-    [[ $? -eq 130 ]] && { echo "Aborted." >&2; return 130; }
+    [[ $? -eq 130 ]] && return 130
     
-    if gum confirm "Commit as '$full_msg'?"; then
-        git commit -m "$full_msg"
-    else
-        echo "Commit aborted." >&2
-    fi
+    git commit -m "$full_msg"
 }
 
 
@@ -173,7 +173,6 @@ amend_commit() {
             # Use the helper to get a fresh conventional message
             local full_msg=$(get_conventional_message)
             if [[ $? -eq 130 || -z "$full_msg" ]]; then
-                echo "Aborted." >&2
                 return 130
             fi
             
