@@ -117,9 +117,14 @@ get_conventional_message() {
 # The Branch Router
 branch_router() {
     local action=$1
-    shift
+
+    (( $# > 0 )) && shift
 
     case "$action" in
+        status)
+            # Logic for creating a branch
+            git status
+            ;;
         create)
             # Logic for creating a branch
             local name=$(gum input --placeholder "New branch name")
@@ -138,9 +143,7 @@ branch_router() {
             
             [[ $exit_status -eq 130 ]] && return 130
             
-            if [[ -n "$choice" ]]; then
-                branch_router "$choice"
-            fi
+            [[ -n "$choice" ]] && branch_router "$choice"
             ;;
     esac
 }
