@@ -1,10 +1,10 @@
 # .projectrc - Project-specific configuration for the 'project' CLI tool
 
 PROJECT_COMMIT_TYPES=(
-  chore
-  fix
-  new
-  refactor
+  Chore
+  Fix
+  New
+  Refactor
 )
 
 typeset -A PROJECT_CUSTOM_COMMANDS
