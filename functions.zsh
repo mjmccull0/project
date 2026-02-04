@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 if ! command -v gum &> /dev/null; then
     echo "❌ Error: 'gum' is not installed."
@@ -6,9 +6,99 @@ if ! command -v gum &> /dev/null; then
     exit 1
 fi
 
+# Ensure the Zsh parameter module is available for widget management
+zmodload zsh/parameter
+
+# A generic wrapper to run any function safely in ZLE
+_project_zle_wrapper() {
+    # The name of the actual function is passed via a custom variable or state
+    local target_func="$_CURRENT_PROJECT_WIDGET"
+    
+    if (( $+functions[$target_func] )); then
+        # Run the actual project function
+        "$target_func"
+        # UI Housekeeping happens here, outside the .projectrc
+        zle reset-prompt
+    fi
+}
+
+zle -N _project_zle_wrapper
+
+unload_project_context() {
+    # 1. UNBIND KEYS
+    # We parse 'bindkey -L' because it handles quoted key sequences perfectly
+    local line
+    bindkey -L | grep " project_" | while read -r line; do
+        # ${(z)line} splits the line into shell-aware words
+        # word [2] is the key sequence (e.g., "^B")
+        local parts=(${(z)line})
+        local key=$parts[2]
+    
+        eval "bindkey -r $key" 2>/dev/null
+    done
+
+    # 2. DELETE WIDGETS
+    # This prevents "Widget Bloat" by removing them from ZLE entirely
+    local w
+    for w in ${(k)widgets}; do
+        if [[ "$w" == project_* ]]; then
+            # Check if the widget actually exists before deleting
+            if (( ${+widgets[$w]} )); then
+                zle -D "$w" 2>/dev/null
+                # Kill the function (the actual code in memory)
+                unfunction "$w" 2>/dev/null
+            fi
+        fi
+    done
+}
+
+load_project_config() {
+    unload_project_context
+
+    if [[ -f "./.projectrc" ]]; then
+        unset PROJECT_KEYS
+        typeset -gA PROJECT_KEYS
+
+        source "./.projectrc"
+
+        if (( ${#PROJECT_KEYS} > 0 )); then
+            local k v
+            # for k v in ${(kv)PROJECT_KEYS}; do
+            #     # Check if 'v' is a defined function
+            #     if [[ "$(whence -w $v)" == *": function"* ]]; then
+            #         # Create a tiny "anonymous" widget that sets the target and calls the wrapper
+            #         eval "${v}_widget() { _CURRENT_PROJECT_WIDGET=$v; _project_zle_wrapper }"
+            #         zle -N "${v}_widget"
+
+            #         # Bind the key to the newly minted widget
+            #         bindkey "$k" "${v}_widget"
+            #     fi
+            # done
+            for k v in ${(kv)PROJECT_KEYS}; do
+                # Define a UI-aware version of the project function on the fly
+                eval "
+                    _zle_$v() {
+                        $v              # Call the original function from .projectrc
+                        zle reset-prompt # Perform the reset
+                    }
+                "
+                zle -N "_zle_$v" "_zle_$v"
+                bindkey "$k" "_zle_$v"
+            done
+        fi
+    fi
+}
+
+# Register the hook
+# We use += to avoid overwriting other hooks (like oh-my-zsh themes)
+autoload -Uz add-zsh-hook
+add-zsh-hook chpwd load_project_config
+
+# Run it once on startup in case you open the terminal already in a project dir
+load_project_config
+
 # The main entry point
 project() {
-    # Look for local overrides
     [[ -f "./.projectrc" ]] && source "./.projectrc"
 
     local cmd=$1
@@ -414,32 +504,21 @@ project_reset() {
 }
 
 project_init() {
+    # 1. Check if the target already exists to prevent accidental overwrites
     if [[ -f "./.projectrc" ]]; then
         echo "⚠️  .projectrc already exists."
         return 1
     fi
 
-    cat <<EOF > .projectrc
-# .projectrc
-typeset -A PROJECT_CUSTOM_COMMANDS
+    # 2. Check if the example template actually exists
+    if [[ -f "./.projectrc.example" ]]; then
+        cp ./.projectrc.example ./.projectrc
+        echo "✅ Created .projectrc from .projectrc.example."
+    else
+        echo "❌ Error: .projectrc.example not found in this directory."
+        return 1
+    fi
 
-PROJECT_CUSTOM_COMMANDS=(
-    "start" "Run this project"
-)
-
-project_start() {
-  echo "npm start"
-}
-
-PROJECT_COMMIT_TYPES=(
-  "feat"
-  "fix"
-  "docs"
-  "style"
-  "refactor"
-  "test"
-  "chore"
-)
-EOF
-    echo "✅ Created .projectrc template."
+    # Trigger your loader immediately so hotkeys work now
+    load_project_config
 }

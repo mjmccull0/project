@@ -1,3 +1,5 @@
+# .projectrc - Project-specific configuration for the 'project' CLI tool
+
 PROJECT_COMMIT_TYPES=(
   chore
   fix
@@ -9,16 +11,34 @@ typeset -A PROJECT_CUSTOM_COMMANDS
 
 PROJECT_CUSTOM_COMMANDS=(
     build "Build the project assets"
-    peek  "View the build output"
+    test  "Run Tests"
     logs  "Tail the dev logs"
 )
 
-# Define the 'build' command
-project_local_build() {
-  echo "make build"
+project_git_status() {
+    git status
 }
 
-# Define the 'logs' command
-project_local_logs() {
-    echo "make log"
+project_list_files() {
+    ls -lah
 }
+
+project_build() {
+    echo "Building this specific project..."
+}
+
+project_test() {
+    echo "Running Tests..."
+}
+
+# Define your project-specific mappings
+# Syntax: KEY_SEQUENCE=WIDGET_NAME
+typeset -A PROJECT_KEYS
+
+# Just map them here
+PROJECT_KEYS=(
+    "^[b" "project_build"
+    "^[t" "project_test"
+    "^[g" "project_git_status"
+    "^[l" "project_list_files"
+)

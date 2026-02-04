@@ -1,55 +1,44 @@
 # .projectrc - Project-specific configuration for the 'project' CLI tool
 
-# --- 1. COMMIT SETTINGS ---
-# Define the types available in 'project commit'
 PROJECT_COMMIT_TYPES=(
-  "feat"
-  "fix"
-  "docs"
-  "style"
-  "refactor"
-  "test"
-  "chore"
+  chore
+  fix
+  new
+  refactor
 )
 
 typeset -A PROJECT_CUSTOM_COMMANDS
 
-# --- 2. DISCOVERY MENU ---
-# Add these strings to the 'gum choose' menu when running 'project' without args
 PROJECT_CUSTOM_COMMANDS=(
     build "Build the project assets"
-    peek  "View the build output"
+    test  "Run Tests"
     logs  "Tail the dev logs"
 )
 
-# --- 3. CUSTOM COMMAND DEFINITIONS ---
-# Rules: Name functions 'project_local_<command_name>'
-
-# NEW: Run project build
-project_local_build() {
-  echo "Building project..."
-  echo "npm run build""
+project_git_status() {
+    git status
 }
 
-# NEW: Run test suite
-project_local_test() {
-  echo "npm test"
+project_list_files() {
+    ls -lah
 }
 
-# NEW: specialized deploy script
-project_local_deploy() {
-  if gum confirm "Are you sure you want to deploy to PRODUCTION?"; then
-    echo "Deploying..."
-    # Add your deployment logic here
-  fi
+project_build() {
+    echo "Building this specific project..."
 }
 
-# OVERRIDE: Change the default 'push' behavior for this repo
-# project_local_push() {
-#   echo "Pushing with force-with-lease for safety..."
-#   git push origin head --force-with-lease
-# }
+project_test() {
+    echo "Running Tests..."
+}
 
-# --- 4. ENVIRONMENT VARIABLES ---
-# These are loaded whenever you run the 'project' command in this folder
-export PROJECT_NAME="My Awesome App"
+# Define your project-specific mappings
+# Syntax: KEY_SEQUENCE=WIDGET_NAME
+typeset -A PROJECT_KEYS
+
+# Just map them here
+PROJECT_KEYS=(
+    "^[b" "project_build"
+    "^[t" "project_test"
+    "^[g" "project_git_status"
+    "^[l" "project_list_files"
+)
