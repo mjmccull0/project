@@ -13,7 +13,7 @@ zmodload zsh/parameter
 _project_zle_wrapper() {
     # The name of the actual function is passed via a custom variable or state
     local target_func="$_CURRENT_PROJECT_WIDGET"
-    
+
     if (( $+functions[$target_func] )); then
         # Run the actual project function
         "$target_func"
@@ -28,12 +28,12 @@ unload_project_context() {
     # 1. UNBIND KEYS
     # We parse 'bindkey -L' because it handles quoted key sequences perfectly
     local line
-    bindkey -L | grep " project_" | while read -r line; do
+    bindkey -L | grep "project_" | while read -r line; do
         # ${(z)line} splits the line into shell-aware words
         # word [2] is the key sequence (e.g., "^B")
         local parts=(${(z)line})
         local key=$parts[2]
-    
+
         eval "bindkey -r $key" 2>/dev/null
     done
 
@@ -41,7 +41,7 @@ unload_project_context() {
     # This prevents "Widget Bloat" by removing them from ZLE entirely
     local w
     for w in ${(k)widgets}; do
-        if [[ "$w" == project_* ]]; then
+        if [[ "$w" == project_* || "$w" == _zle_project_* ]]; then
             # Check if the widget actually exists before deleting
             if (( ${+widgets[$w]} )); then
                 zle -D "$w" 2>/dev/null
@@ -63,17 +63,6 @@ load_project_config() {
 
         if (( ${#PROJECT_KEYS} > 0 )); then
             local k v
-            # for k v in ${(kv)PROJECT_KEYS}; do
-            #     # Check if 'v' is a defined function
-            #     if [[ "$(whence -w $v)" == *": function"* ]]; then
-            #         # Create a tiny "anonymous" widget that sets the target and calls the wrapper
-            #         eval "${v}_widget() { _CURRENT_PROJECT_WIDGET=$v; _project_zle_wrapper }"
-            #         zle -N "${v}_widget"
-
-            #         # Bind the key to the newly minted widget
-            #         bindkey "$k" "${v}_widget"
-            #     fi
-            # done
             for k v in ${(kv)PROJECT_KEYS}; do
                 # Define a UI-aware version of the project function on the fly
                 eval "
@@ -105,14 +94,7 @@ project() {
     # Only shift if $cmd is not empty
     [[ -n "$cmd" ]] && shift
 
-    # TODO: Pick a naming convention
-    # --- THE OVERRIDE CHECK ---
-    # This catches BOTH overrides and new commands
-    if whence "project_local_$cmd" >/dev/null; then
-        "project_local_$cmd" "$@"
-        return $?
-    fi
-    
+
     if whence "project_$cmd" >/dev/null; then
         "project_$cmd" "$@"
         return $?
@@ -133,7 +115,6 @@ project() {
             choices=(branch amend commit push reset squash undo)
 
             # Add 'init' ONLY if .projectrc does not exist
-            
             [[ ! -f "./.projectrc" ]] && choices+=(init)
             # Add only the KEYS (command names) from your Associative Array
             if (( ${#PROJECT_CUSTOM_COMMANDS} > 0 )); then
