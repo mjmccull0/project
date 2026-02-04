@@ -112,7 +112,7 @@ project() {
         *)
             local -a choices
             # Add core commands
-            choices=(branch amend commit push reset squash undo)
+            choices=(branch amend commit diff push reset squash undo)
 
             # Add 'init' ONLY if .projectrc does not exist
             [[ ! -f "./.projectrc" ]] && choices+=(init)
@@ -202,14 +202,23 @@ branch_router() {
             echo "Creating branch: $name"
             git checkout -b "$name"
             ;;
+        diff)
+            project_diff "$@"
+            ;;
         switch)
             # Logic for switching
             local target=$(git branch --format="%(refname:short)" | gum filter)
             git checkout "$target"
             ;;
+        rebase)
+            project_rebase "$@"
+            ;;
+        backup)
+            project_snapshot "$@"
+            ;;
         *)
             # Discovery Mode: No action provided, so ask!
-            local choice=$(gum choose "create" "switch" "rebase")
+            local choice=$(gum choose "create" "diff" "switch" "rebase" "backup")
             local exit_status=$?
             
             [[ $exit_status -eq 130 ]] && return 130
@@ -482,6 +491,103 @@ project_reset() {
     else
         echo "Wipe aborted." >&2
     fi
+}
+
+project_rebase() {
+    # 1. Ensure a clean working tree (or stash if the user agrees)
+    local stash_result=$(ensure_clean_working_tree)
+    [[ $? -eq 130 ]] && return 130
+
+    # 2. Select the target to rebase onto
+    # We'll offer local branches, but also allow the user to see remote branches
+    echo "Select a target branch to rebase onto:" >&2
+    local target=$(git branch -a --format="%(refname:short)" | sed 's/origin\///' | sort -u | gum filter --placeholder "Target branch (e.g., main, develop)...")
+
+    # If the user escaped/cancelled
+    if [[ -z "$target" ]]; then
+        restore_stash_if_needed "$stash_result"
+        return 130
+    fi
+
+    # 3. Choose the type of rebase
+    local mode=$(gum choose "Standard Rebase" "Interactive (-i)")
+    
+    echo "Starting rebase onto $target..." >&2
+
+    # 4. Execute
+    if [[ "$mode" == "Interactive"* ]]; then
+        # Use vared or just execute git directly since -i needs a real TTY/editor
+        git rebase -i "$target"
+    else
+        git rebase "$target"
+    fi
+
+    local exit_status=$?
+
+    # 5. Handle Results
+    if [[ $exit_status -eq 0 ]]; then
+        echo "✅ Rebase completed successfully." >&2
+        restore_stash_if_needed "$stash_result"
+    else
+        echo "⚠️  Rebase paused or failed due to conflicts." >&2
+        echo "1. Resolve conflicts manually." >&2
+        echo "2. Run 'git rebase --continue'." >&2
+        echo "3. Your auto-stashed changes (if any) are still in the stash list." >&2
+        return $exit_status
+    fi
+}
+
+project_snapshot() {
+    # 1. Select the branch you want to copy
+    echo "Select branch to snapshot:" >&2
+    local source_branch=$(git branch --format="%(refname:short)" | gum filter --placeholder "Search branch to backup...")
+
+    # Handle Ctrl+C / Escape
+    [[ -z "$source_branch" ]] && return 130
+
+    # 2. Name the new backup branch
+    # Pre-filling with 'backup/' is a common convention to keep the sidebar clean
+    local backup_name=$(gum input --value "backup/$source_branch-$(date +%Y%m%d-%H%M)" --placeholder "Name of the backup branch")
+
+    # Handle Ctrl+C / Escape or empty input
+    [[ -z "$backup_name" ]] && return 130
+
+    # 3. Create the branch (without switching to it)
+    # This creates $backup_name pointing at the current state of $source_branch
+    if git branch "$backup_name" "$source_branch" 2>/dev/null; then
+        echo "✅ Snapshot created: $backup_name" >&2
+    else
+        echo "❌ Error: Could not create backup. (Branch name might already exist)" >&2
+        return 1
+    fi
+}
+
+project_diff() {
+  project_branch_diff
+}
+
+project_branch_diff() {
+    while true; do
+        # 1. Get the list of modified files
+        local files=$(git status --porcelain | sed 's/^...//')
+
+        if [[ -z "$files" ]]; then
+            echo "✨ No modified files to inspect."
+            return 0
+        fi
+
+        # 2. Pick a file to inspect
+        local selected=$(echo "$files" | gum filter --placeholder "Select a file to see its diff (Esc to exit)...")
+
+        # Exit the loop if they hit Escape or Ctrl+C
+        [[ -z "$selected" ]] && break
+
+        # 3. Show the diff using a pager
+        # We use --color=always so the colors stay when piped to the pager
+        git diff --color=always "$selected" | gum pager
+
+        # The loop repeats, bringing you back to the file list!
+    done
 }
 
 project_init() {

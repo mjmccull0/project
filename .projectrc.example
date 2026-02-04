@@ -31,14 +31,172 @@ project_test() {
     echo "Running Tests..."
 }
 
+project_diff() {
+    local base_branch="HEAD"
+
+    while true; do
+        # 1. Get the list of modified files
+        local files=$(git status --porcelain | sed 's/^...//')
+
+        if [[ -z "$files" ]]; then
+            echo "✨ No modified files to inspect."
+            return 0
+        fi
+
+        # 2. The Main View
+        # --expect captures the key pressed (ctrl-g, ctrl-r, etc.)
+        local out=$(echo "$files" | fzf \
+            --expect=ctrl-g,ctrl-r \
+            --preview "git diff --color=always $base_branch -- {}" \
+            --preview-window 'right:65%:wrap' \
+            --header "Base: $base_branch | [Ctrl-G] Change Branch | [Ctrl-R] Reset | [Enter] Exit" \
+            --bind 'ctrl-d:preview-page-down,ctrl-u:preview-page-up')
+
+        # 3. Handle the Exit State
+        # fzf output: 1st line = key, 2nd line = selected file
+        local key=$(echo "$out" | head -1)
+        local selection=$(echo "$out" | sed -n '2p')
+
+        case "$key" in
+            ctrl-g)
+                # 4. The Branch Picker (also using fzf)
+                # We use --height to make it look like a dropdown/overlay
+                local branch_choice=$(git branch -a --format="%(refname:short)" | 
+                                      sed 's/origin\///' | sort -u | 
+                                      fzf --height=15 --border --header "Select comparison base")
+                
+                if [[ -n "$branch_choice" ]]; then
+                    base_branch="$branch_choice"
+                fi
+                # Loop restarts and re-opens the main view with the new base_branch
+                ;;
+            ctrl-r)
+                base_branch="HEAD"
+                ;;
+            "") # This is what happens if they hit Enter or Esc
+                break
+                ;;
+            *)
+                # For any other keys, just exit
+                break
+                ;;
+        esac
+    done
+}
+
+project_diff_fzf() {
+    local target_branch="main"
+    # Auto-detect master if main doesn't exist
+    git rev-parse --verify master >/dev/null 2>&1 && target_branch="master"
+    
+    local current_base="HEAD"
+    local last_file=""
+
+    while true; do
+        local files=$(git status --porcelain | sed 's/^...//')
+        [[ -z "$files" ]] && { echo "✨ No changes."; return; }
+
+        # 1. Use --query to automatically highlight the last file
+        # 2. --select-1 + --exit-0 makes it seamless if the query matches perfectly
+        local out=$(echo "$files" | fzf \
+            --query="$last_file" \
+            --expect=ctrl-g,ctrl-t,ctrl-r \
+            --preview "git diff --color=always $current_base -- {2}" \
+            --preview-window 'right:65%:wrap' \
+            --header "Base: $current_base | [Ctrl-T] Toggle vs $target_branch | [Ctrl-G] Set Target | [Ctrl-R] Reset" \
+            --bind 'ctrl-d:preview-page-down,ctrl-u:preview-page-up')
+
+        # Parse fzf output
+        local key=$(echo "$out" | head -1)
+        local selection=$(echo "$out" | sed -n '2p' | awk '{print $NF}')
+        
+        # Keep track of the file so we can highlight it in the next loop
+        [[ -n "$selection" ]] && last_file="$selection"
+
+        case "$key" in
+            ctrl-t) # Toggle between HEAD and the Target
+                if [[ "$current_base" == "HEAD" ]]; then
+                    current_base="$target_branch"
+                else
+                    current_base="HEAD"
+                fi
+                ;;
+            ctrl-g) # Pick a brand new Target Branch
+                local choice=$(git branch -a --format="%(refname:short)" | sed 's/origin\///' | sort -u | fzf --height=15 --header "New Target Branch")
+                if [[ -n "$choice" ]]; then
+                    target_branch="$choice"
+                    current_base="$choice" # Switch to it immediately
+                fi
+                ;;
+            ctrl-r) # Hard reset to HEAD
+                current_base="HEAD"
+                ;;
+            "") # Enter or Esc
+                break
+                ;;
+        esac
+    done
+}
+
+project_dynamic_diff() {
+    # Initialize the base as HEAD (your uncommitted changes)
+    local base_branch="HEAD"
+    local current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    while true; do
+        local files=$(git status --porcelain | sed 's/^...//')
+
+        if [[ -z "$files" ]]; then
+            echo "✨ No modified files to inspect."
+            return 0
+        fi
+
+        # We capture the key press in 'out'
+        local out=$(echo "$files" | fzf \
+            --expect=ctrl-g,ctrl-r \
+            --preview "git diff --color=always $base_branch -- {}" \
+            --preview-window 'right:65%:wrap' \
+            --header "Comparing vs: $base_branch ($current_branch) | [Ctrl-G] Change Base | [Ctrl-R] Reset to HEAD" \
+            --bind 'ctrl-d:preview-page-down,ctrl-u:preview-page-up')
+
+        # Parse key and selection
+        local key=$(echo "$out" | head -1)
+        local selection=$(echo "$out" | sed -n '2p')
+
+        case "$key" in
+            ctrl-g)
+                # Change the base branch
+                local branch_choice=$(git branch -a --format="%(refname:short)" | 
+                                      sed 's/origin\///' | sort -u | 
+                                      fzf --height=15 --border --header "Select comparison base")
+                
+                [[ -n "$branch_choice" ]] && base_branch="$branch_choice"
+                ;;
+            ctrl-r)
+                # The "Switch Back" key
+                base_branch="HEAD"
+                ;;
+            "") # Enter or Esc pressed
+                break
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+}
+
 # Define your project-specific mappings
 # Syntax: KEY_SEQUENCE=WIDGET_NAME
 typeset -A PROJECT_KEYS
 
 # Just map them here
 PROJECT_KEYS=(
+    # Alt+b on my linux laptop
     "^[b" "project_build"
     "^[t" "project_test"
+    "^[d" "project_diff_fzf"
     "^[g" "project_git_status"
     "^[l" "project_list_files"
+    # Map better keys for MacOS
 )
