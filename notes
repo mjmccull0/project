@@ -69,3 +69,66 @@ called by the plugin.
     },
   }
 }
+
+
+
+To move those specific commits while keeping their order and messages intact, the git cherry-pick range command is exactly what you need.
+
+Since your oldest commit is a5ffbed7 and your newest is a2054a73, follow these steps from your target branch:
+
+The Range Cherry-Pick
+Run this command to pull the entire block of work over:
+
+Bash
+git cherry-pick a5ffbed7^..a2054a73
+Why the ^ is important
+In Git range syntax (A..B), the first commit is usually excluded. Adding the caret ^ tells Git to include the starting commit itself. Without it, you would miss the "Create a component..." commit.
+
+Step-by-Step Workflow
+Ensure your target branch is clean: Before starting, make sure you don't have uncommitted changes that might conflict.
+
+Execute the pick: Run the command above. Git will replay each commit one by one in chronological order.
+
+Handle Conflicts (If any): If a file you modified in these commits has changed differently on the target branch, Git will pause.
+
+Fix the file.
+
+git add <file>
+
+git cherry-pick --continue
+
+Verify: Run git log --oneline -n 3 to see your beautiful, preserved commit history on the new branch.
+
+A "Project Port" Tool for your CLI
+Since you already have a project undo interface (seen in your screenshots), you can build a project port function that uses that same gum style to pick a range and automate this.
+
+Would you like me to write a function that lets you select a "Start" and "End" commit from a list and runs this cherry-pick for you?
+
+
+The target branch origin and my my local copy have diverged, which makes sense because the remote branch has been forced pushed to. Do I just run 'git pull' or is there another step to take before cherry picking?
+
+Since the remote branch has been force-pushed, a standard git pull will likely result in a messy merge commit or a "refusing to merge unrelated histories" error. To get your local copy in sync with the new reality of the remote branch before you start cherry-picking, you should use git reset.
+
+The Pre-Cherry-Pick Workflow
+You need to align your local branch pointer exactly with the remote's new position. Run these commands while on your target branch:
+
+Fetch the latest state: git fetch origin This updates your local knowledge of what origin/branch-name looks like without touching your working files.
+
+Force-align your local branch: git reset --hard origin/<target-branch-name> This discards your local diverged history and makes your local branch an identical twin of the remote. Warning: Ensure you don't have local work on this branch you want to keep, as --hard will wipe uncommitted changes.
+
+Why not git pull?
+When a remote is force-pushed, the commit history has been rewritten. If you pull, Git tries to "unify" your old local history with the new remote history. Since they share a common ancestor but have different paths, you'll end up with a "Merge branch..." commit that includes all the old versions of the commits you're trying to get rid of.
+
+The Full Command Sequence
+Once your target branch is reset and clean, you can proceed with the cherry-pick:
+
+Bash
+# 1. Sync the target branch
+git fetch origin
+git checkout <target-branch>
+git reset --hard origin/<target-branch>
+
+# 2. Apply your range of commits
+git cherry-pick a5ffbed7^..a2054a73
+Handling the "Moved" Commits
+Since you are moving these commits to this branch, they will now appear as brand new commits on top of the reset history.
