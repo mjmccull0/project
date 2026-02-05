@@ -454,3 +454,175 @@ project_branch_new() {
     # Use run_git to log the action if VERBOSE_GIT is true
     run_git "git checkout -b $new_branch $source_branch"
 }
+
+# Centered file finder using system default editor
+preview_files() {
+  # Define a fallback editor if $EDITOR is empty
+  local my_editor="${EDITOR:-vi}"
+
+  # Select the file
+  local file=$(fzf --layout=reverse \
+                   --border=rounded \
+                   --margin=20%,30% \
+                   --height=40% \
+                   --prompt="Open with ${my_editor} > " \
+                   --header="Fuzzy Search" \
+                   --info=hidden)
+
+  # Open the file if one was selected
+  [ -n "$file" ] && "$my_editor" "$file"
+}
+
+# Centered file finder that returns to preview after editing
+# file_browser() {
+#   local my_editor="${EDITOR:-vi}"
+# 
+#   fzf --layout=reverse \
+#       --border=rounded \
+#       --margin=20%,30% \
+#       --height=40% \
+#       --prompt="Open with ${my_editor} > " \
+#       --header="Enter: Edit | ESC: Quit" \
+#       --info=hidden \
+#       --preview 'bat --color=always --style=numbers {} 2>/dev/null || cat {}' \
+#       --bind "enter:execute($my_editor {})+refresh-preview"
+# }
+
+file_browser() {
+  local my_editor="${EDITOR:-vi}"
+
+  fzf --layout=reverse \
+      --border=rounded \
+      --margin=0%,0% \
+      --height=100% \
+      --prompt="Open with ${my_editor} > " \
+      --header="Enter: Edit | ESC: Quit" \
+      --info=hidden \
+      --preview 'bat --color=always --style=numbers {} 2>/dev/null || cat {}' \
+      --bind "enter:execute($my_editor {})+refresh-preview"
+}
+
+git_log() {
+  # Start with a default command
+  INITIAL_QUERY="git log --oneline --graph --all"
+
+  fzf --ansi --disabled --query "$INITIAL_QUERY" \
+      --height=100% --layout=reverse --border=rounded \
+      --margin=0%,00% \
+      --header=" [ Cmdline ] " --header-first \
+      --prompt=" " \
+      --bind "start:reload($INITIAL_QUERY)" \
+      --bind "change:reload({q} || true)" \
+      --preview "echo {} | grep -o '[a-f0-9]\{7\}' | xargs -I % git show --color=always %" \
+      --preview-window="right:50%:border-left"
+}
+
+# A file to store your 'Harpooned' commands
+COMMAND_FILE="$HOME/.fzf_commands"
+touch "$COMMAND_FILE"
+
+# The main function
+# A file to store your 'Harpooned' commands
+COMMAND_FILE="$HOME/.fzf_commands"
+touch "$COMMAND_FILE"
+
+fzf_cmd_test() {
+  local INITIAL_QUERY="git log --oneline --graph --all"
+
+  fzf --ansi --disabled --query "$INITIAL_QUERY" \
+      --height=60% --layout=reverse --border=rounded \
+      --margin=10%,20% \
+      --header=" [ Cmdline ] | CTRL-H: Harpoon | CTRL-S: Save " \
+      --header-first \
+      --prompt=" " \
+      --preview "echo {} | grep -o '[a-f0-9]\{7\}' | xargs -I % git show --color=always % 2>/dev/null" \
+      --preview-window="right:50%:border-left" \
+      --bind "start:reload($INITIAL_QUERY)" \
+      --bind "change:reload({q} || true)" \
+      --bind "ctrl-h:unbind(change)+execute(cat $COMMAND_FILE | fzf --header='[ Harpoon ]' --height=40% --border=rounded --layout=reverse)+rebind(change)+replace-query" \
+      --bind "ctrl-s:execute(echo {q} >> $COMMAND_FILE && sort -u -o $COMMAND_FILE $COMMAND_FILE)+transform-header(echo ' [ Saved! ] ')"
+}
+
+# WIP harpoon for the shell
+COMMAND_FILE="$HOME/.fzf_commands"
+touch "$COMMAND_FILE"
+
+project_harpoon() {
+  local INITIAL_QUERY="git log --oneline --graph --all"
+
+  # Define all fzf options in an array to avoid syntax errors
+  local fzf_opts=(
+    --ansi
+    --disabled
+    --query "$INITIAL_QUERY"
+    --height=40%
+    --layout=reverse
+    --border=rounded
+    --margin=10%,20%
+    --header=" [ Cmdline ] | CTRL-H: Harpoon | CTRL-S: Save "
+    --header-first
+    --prompt="Cmd > "
+    --preview "echo {} | grep -o '[a-f0-9]\{7\}' | xargs -I % git show --color=always % 2>/dev/null"
+    
+    # 1. Live Command Reload
+    --bind "change:reload({q} || true)"
+    
+    # 2. Save current input to file
+    --bind "ctrl-s:execute(echo {q} >> $COMMAND_FILE && sort -u -o $COMMAND_FILE $COMMAND_FILE)"
+    
+    # 3. The Toggle Logic
+    --bind "ctrl-h:transform:
+      [[ \$FZF_PROMPT =~ 'Cmd' ]] && 
+        echo 'change-prompt(Harpoon > )+reload(cat $COMMAND_FILE)+unbind(change)' || 
+        echo 'change-prompt(Cmd > )+reload({q})+rebind(change)'"
+    
+    # 4. Handle Enter key based on mode
+    --bind "enter:transform:
+      [[ \$FZF_PROMPT =~ 'Harpoon' ]] && 
+        echo 'change-prompt(Cmd > )+replace-query+rebind(change)+reload({q})' || 
+        echo 'accept'"
+  )
+
+  # Execute fzf with the array of options
+  fzf "${fzf_opts[@]}"
+}
+
+HARPOON_FILES="$HOME/.fzf_harpoon_files"
+touch "$HARPOON_FILES"
+
+file_search() {
+  local my_editor="${EDITOR:-vi}"
+  
+  local fzf_opts=(
+    --ansi
+    --disabled
+    --height=100%
+    --layout=reverse
+    --border=rounded
+    --prompt="Search Text > "
+    --header="[ ENTER: Edit | CTRL-S: Harpoon File | CTRL-H: View Harpoon ]"
+    --header-first
+    # Use ':' as delimiter to separate filename from line numbers
+    --delimiter ':'
+    # Preview: {1} is the filename, {2} is the line number
+    --preview 'bat --color=always --style=numbers --highlight-line {2} {1} 2>/dev/null || cat {1}'
+    
+    --bind "start:reload(rg --column --line-number --no-heading --color=always --smart-case '' || true)"
+    --bind "change:reload(rg --column --line-number --no-heading --color=always --smart-case {q} || true)"
+    
+    --bind "ctrl-s:execute(echo {1} >> $HARPOON_FILES && sort -u -o $HARPOON_FILES $HARPOON_FILES)"
+    
+    --bind "ctrl-h:transform:
+      [[ \$FZF_PROMPT =~ 'Search' ]] && 
+        echo 'change-prompt(Harpoon > )+reload(cat $HARPOON_FILES)+unbind(change)' || 
+        echo 'change-prompt(Search > )+reload(rg --column --line-number --no-heading --color=always --smart-case {q} || true)+rebind(change)'"
+    
+    --bind "enter:transform:
+      [[ \$FZF_PROMPT =~ 'Search' ]] && 
+        echo 'execute($my_editor +{2} {1})+refresh-preview' || 
+        echo 'change-prompt(Search > )+replace-query+rebind(change)+reload(rg --column --line-number --no-heading --color=always --smart-case {q} || true)'"
+  )
+
+  fzf "${fzf_opts[@]}"
+}
+>>>>>>> f0e97eb (Save today's functions)
