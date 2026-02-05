@@ -207,7 +207,7 @@ branch_router() {
             ;;
         switch)
             # Logic for switching
-            local target=$(git branch --format="%(refname:short)" | gum filter)
+            local target=$(git branch -a --format="%(refname:short)" | sed 's|^origin/||' | sort -u | gum filter)
             git checkout "$target"
             ;;
         rebase)
