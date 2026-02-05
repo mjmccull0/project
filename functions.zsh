@@ -52,31 +52,6 @@ unload_project_context() {
     done
 }
 
-load_project_config() {
-    unload_project_context
-
-    if [[ -f "./.projectrc" ]]; then
-        unset PROJECT_KEYS
-        typeset -gA PROJECT_KEYS
-
-        source "./.projectrc"
-
-        if (( ${#PROJECT_KEYS} > 0 )); then
-            local k v
-            for k v in ${(kv)PROJECT_KEYS}; do
-                # Define a UI-aware version of the project function on the fly
-                eval "
-                    _zle_$v() {
-                        $v              # Call the original function from .projectrc
-                        zle reset-prompt # Perform the reset
-                    }
-                "
-                zle -N "_zle_$v" "_zle_$v"
-                bindkey "$k" "_zle_$v"
-            done
-        fi
-    fi
-}
 
 # Register the hook
 # We use += to avoid overwriting other hooks (like oh-my-zsh themes)

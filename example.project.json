@@ -1,0 +1,22 @@
+{
+  "branch": {
+    "Description": "Manage git branches",
+    "binding": {
+      "^c": "create",
+      "^s": "switch",
+      "^r": "rebase"
+    }
+  },
+  "build": {
+    "Description": "Build the project",
+    "binding": {
+      "^b": "npm run build"
+    }
+  },
+  "start": {
+    "Description": "Start development server",
+    "binding": {
+      "^s": "npm start"
+    }
+  }
+}

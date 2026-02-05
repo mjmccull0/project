@@ -1,0 +1,71 @@
+Moving to a json presents a few issues; but a much cleaner config.
+Ideally there wouldn't be two files necessary for this plugin to be
+useful. Defining custom functions is what makes this useful, so we
+need to find a way to trigger commands for the concept of something
+like 'branch create' that still allows for a UI like gum or fzf.
+
+One option is to allow for including shell scripts that can then be
+called by the plugin.
+
+{
+  "include": ["$HOME/.projectrc/", "./.project.sh"]
+  "branch": {
+    "route-key": "^g",
+    "description": "Manage git branches",
+    "binding": {
+      "c": "project_branch_create",
+      "s": "project_branch_switch",
+      "r": "project_branch_rebase"
+    }
+  },
+  "build": {
+    "description": "Build the project",
+    "binding": {
+      "b": "npm run build"
+    }
+  },
+  "start": {
+    "description": "Start development server",
+    "binding": {
+      "s": "npm start"
+    }
+  }
+}
+
+{
+  "include": ["$HOME/.projectrc/", "./.project.sh"]
+  "prefix": "^p",
+  "binding": {
+    "a": "app",
+    "b": "branch",
+    "c": "config",
+  },
+  "branch": {
+    "prefix": "^g",
+    "description": "Manage git branches",
+    "binding": {
+      "c": "project_branch_create",
+      "s": "project_branch_switch",
+      "r": "project_branch_rebase"
+    }
+  },
+  "app": {
+    "build": {
+      "description": "Build the project",
+      "binding": {
+        "b": "npm run build"
+      }
+    },
+    "start": {
+      "description": "Start development server",
+      "binding": {
+        "s": "npm start"
+      }
+    }
+  },
+  "config": {
+    "binding: {
+      "e": "EDITOR=nvim ./project.json",
+    },
+  }
+}

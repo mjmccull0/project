@@ -1,0 +1,18 @@
+{
+  "include": ["./.project.sh"],
+  "app": {
+    "prefix": "^a",
+    "description": "Application Commands",
+    "binding": {
+      "b": "project_build",
+      "s": "npm start",
+      "t": {
+        "description": "Test Suite",
+        "binding": {
+          "u": "npm test -- unit",
+          "e": "npm test -- e2e"
+        }
+      }
+    }
+  }
+}
