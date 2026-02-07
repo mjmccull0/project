@@ -7,38 +7,11 @@ PROJECT_COMMIT_TYPES=(
   Refactor
 )
 
-typeset -A PROJECT_CUSTOM_COMMANDS
-
-PROJECT_CUSTOM_COMMANDS=(
-    build "Build the project assets"
-    test  "Run Tests"
-    logs  "Tail the dev logs"
-)
-
-project_git_status() {
-    git status
-}
-
-project_list_files() {
-    ls -lah
-}
-
-project_build() {
-    echo "Building this specific project..."
-}
-
-project_test() {
-    echo "Running Tests..."
-}
-
 # Define your project-specific mappings
 # Syntax: KEY_SEQUENCE=WIDGET_NAME
 typeset -A PROJECT_KEYS
 
 # Just map them here
 PROJECT_KEYS=(
-    "^[b" "project_build"
-    "^[t" "project_test"
-    "^[g" "project_git_status"
-    "^[l" "project_list_files"
+    "^[p" "project"
 )

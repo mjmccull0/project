@@ -101,18 +101,12 @@ project() {
     fi
 
     case "$cmd" in
-        amend)  amend_commit "$@" ;;
         branch) branch_router "$@" ;;
-        commit) project_commit ;;
         init)   project_init ;;
-        push)   project_push ;;
-        reset)  project_reset ;;
-        squash) project_squash ;;
-        undo)   project_undo_wizard "$@" ;;
         *)
             local -a choices
             # Add core commands
-            choices=(branch amend commit diff push reset squash undo)
+            choices=(branch)
 
             # Add 'init' ONLY if .projectrc does not exist
             [[ ! -f "./.projectrc" ]] && choices+=(init)
@@ -185,6 +179,35 @@ get_conventional_message() {
     esac
 }
 
+project_branch_create() {
+    local name=$(gum input --placeholder "New branch name")
+    echo "Creating branch: $name"
+    git checkout -b "$name"
+}
+
+project_branch_menu(){
+    # Discovery Mode: No action provided, so ask!
+    local choice=$(gum choose \
+      "amend" \
+      "backup" \
+      "commit" \
+      "create" \
+      "diff" \
+      "push" \
+      "rebase" \
+      "reset" \
+      "squash" \
+      "status" \
+      "switch" \
+      "undo" \
+    )
+    local exit_status=$?
+
+    [[ $exit_status -eq 130 ]] && return 130
+
+    [[ -n "$choice" ]] && branch_router "$choice"
+}
+
 # The Branch Router
 branch_router() {
     local action=$1
@@ -192,39 +215,20 @@ branch_router() {
     (( $# > 0 )) && shift
 
     case "$action" in
-        status)
-            # Logic for creating a branch
-            git status
-            ;;
-        create)
-            # Logic for creating a branch
-            local name=$(gum input --placeholder "New branch name")
-            echo "Creating branch: $name"
-            git checkout -b "$name"
-            ;;
-        diff)
-            project_diff "$@"
-            ;;
-        switch)
-            # Logic for switching
-            local target=$(git branch -a --format="%(refname:short)" | sed 's|^origin/||' | sort -u | gum filter)
-            git checkout "$target"
-            ;;
-        rebase)
-            project_rebase "$@"
-            ;;
-        backup)
-            project_snapshot "$@"
-            ;;
-        *)
-            # Discovery Mode: No action provided, so ask!
-            local choice=$(gum choose "create" "diff" "switch" "rebase" "backup")
-            local exit_status=$?
-            
-            [[ $exit_status -eq 130 ]] && return 130
-            
-            [[ -n "$choice" ]] && branch_router "$choice"
-            ;;
+        amend)  amend_commit "$@" ;;
+        backup) project_snapshot "$@" ;;
+        commit) project_commit ;;
+        create) project_branch_create ;;
+        diff) project_diff "$@" ;;
+        push)   project_push ;;
+        rebase) project_rebase "$@" ;;
+        reset)  project_reset ;;
+        squash) project_squash ;;
+        status) git status ;;
+        status) git status ;;
+        switch) project_branch_switch ;;
+        undo)   project_undo_wizard "$@" ;;
+        *) project_branch_menu ;;
     esac
 }
 
@@ -560,6 +564,12 @@ project_snapshot() {
         echo "❌ Error: Could not create backup. (Branch name might already exist)" >&2
         return 1
     fi
+}
+
+project_branch_switch() {
+  # Logic for switching
+  local target=$(git branch -a --format="%(refname:short)" | sed 's|^origin/||' | sort -u | gum filter)
+  git checkout "$target"
 }
 
 project_diff() {
