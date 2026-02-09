@@ -25,31 +25,33 @@ _project_zle_wrapper() {
 zle -N _project_zle_wrapper
 
 unload_project_context() {
-    # 1. UNBIND KEYS
-    # We parse 'bindkey -L' because it handles quoted key sequences perfectly
+    # 1. Run custom project cleanup tasks first
+    if (( ${#PROJECT_ON_UNLOAD} > 0 )); then
+        for task in "${PROJECT_ON_UNLOAD[@]}"; do
+            eval "$task" 2>/dev/null
+        done
+    fi
+
+    # 2. Standard Key/Widget cleanup
     local line
     bindkey -L | grep "project_" | while read -r line; do
-        # ${(z)line} splits the line into shell-aware words
-        # word [2] is the key sequence (e.g., "^B")
         local parts=(${(z)line})
         local key=$parts[2]
-
         eval "bindkey -r $key" 2>/dev/null
     done
 
-    # 2. DELETE WIDGETS
-    # This prevents "Widget Bloat" by removing them from ZLE entirely
+    # 3. Wipe widgets and dynamic functions
     local w
     for w in ${(k)widgets}; do
         if [[ "$w" == project_* || "$w" == _zle_project_* ]]; then
-            # Check if the widget actually exists before deleting
-            if (( ${+widgets[$w]} )); then
-                zle -D "$w" 2>/dev/null
-                # Kill the function (the actual code in memory)
-                unfunction "$w" 2>/dev/null
-            fi
+            zle -D "$w" 2>/dev/null
+            unfunction "$w" 2>/dev/null
         fi
     done
+
+    # Clear the hooks so they don't leak to the next directory
+    unset PROJECT_ON_LOAD
+    unset PROJECT_ON_UNLOAD
 }
 
 load_project_config() {
@@ -57,26 +59,46 @@ load_project_config() {
 
     if [[ -f "./.projectrc" ]]; then
         unset PROJECT_KEYS
-        typeset -gA PROJECT_KEYS
+        # -g for global, -A for Associative Array
+        typeset -gA PROJECT_KEYS 
 
         source "./.projectrc"
 
+        # Check if any keys were actually loaded
         if (( ${#PROJECT_KEYS} > 0 )); then
             local k v
-            for k v in ${(kv)PROJECT_KEYS}; do
-                # Define a UI-aware version of the project function on the fly
-                eval "
-                    _zle_$v() {
-                        $v              # Call the original function from .projectrc
-                        zle reset-prompt # Perform the reset
-                    }
-                "
-                zle -N "_zle_$v" "_zle_$v"
-                bindkey "$k" "_zle_$v"
+            # Use the (@k) flag to iterate over keys accurately
+            for k in "${(@k)PROJECT_KEYS}"; do
+                v="${PROJECT_KEYS[$k]}"
+                
+                # Safety guard: ensure key is not empty
+                [[ -z "$k" ]] && continue
+
+                local widget_name=""
+                
+                # Handle functions vs raw commands
+                if (( $+functions[$v] )); then
+                    widget_name="_zle_$v"
+                    eval "${widget_name}() { zle -I; $v < /dev/tty; zle reset-prompt }"
+                else
+                    # This now gets the WHOLE string "echo 'It works'" as $v
+                    local hash_id=$(echo -n "$v" | cksum | cut -d' ' -f1)
+                    widget_name="project_raw_$hash_id"
+                    
+                    eval "${widget_name}() { 
+                        zle -I; 
+                        eval \"$v\" < /dev/tty; 
+                        zle reset-prompt 
+                    }"
+                fi
+
+                zle -N "$widget_name"
+                bindkey "$k" "$widget_name"
             done
         fi
     fi
 }
+
 
 # Register the hook
 # We use += to avoid overwriting other hooks (like oh-my-zsh themes)
@@ -96,7 +118,8 @@ project() {
 
 
     if whence "project_$cmd" >/dev/null; then
-        "project_$cmd" "$@"
+        # Force the command to take input from the TTY
+        "project_$cmd" "$@" < /dev/tty
         return $?
     fi
 
